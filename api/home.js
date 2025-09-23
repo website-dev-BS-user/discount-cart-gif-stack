@@ -54,17 +54,64 @@ export default function handler(req, res) {
         const discountsUrl = adminBase ? (adminBase + '/discounts') : '/admin/discounts';
         console.log('Discounts URL:', discountsUrl);
         
-        // Set up a fallback click handler immediately
-        openBtn.onclick = function(){
-          console.log('Fallback button clicked - using direct navigation');
-          try { 
-            console.log('Trying window.top.location.assign to:', discountsUrl);
-            window.top.location.assign(discountsUrl); 
-          } catch(error) { 
-            console.log('window.top failed, trying window.location.assign');
-            console.error('Top navigation error:', error);
-            window.location.assign(discountsUrl); 
+        // Enhanced navigation function that tries multiple methods
+        function navigateToDiscounts() {
+          console.log('Attempting navigation to discounts...');
+          
+          // Method 1: Try postMessage to parent frame (most reliable for embedded apps)
+          try {
+            console.log('Trying postMessage to parent...');
+            const message = {
+              message: 'Shopify.API.remoteRedirect',
+              data: { location: discountsUrl }
+            };
+            window.parent.postMessage(message, 'https://admin.shopify.com');
+            console.log('PostMessage sent to parent');
+            return;
+          } catch(error) {
+            console.error('PostMessage failed:', error);
           }
+          
+          // Method 2: Try top-level navigation
+          try {
+            console.log('Trying window.top.location...');
+            if (window.top && window.top !== window) {
+              window.top.location.href = discountsUrl;
+              console.log('Top navigation attempted');
+              return;
+            }
+          } catch(error) {
+            console.error('Top navigation failed:', error);
+          }
+          
+          // Method 3: Try parent navigation
+          try {
+            console.log('Trying window.parent.location...');
+            if (window.parent && window.parent !== window) {
+              window.parent.location.href = discountsUrl;
+              console.log('Parent navigation attempted');
+              return;
+            }
+          } catch(error) {
+            console.error('Parent navigation failed:', error);
+          }
+          
+          // Method 4: Open in new tab/window
+          try {
+            console.log('Opening in new window...');
+            window.open(discountsUrl, '_blank');
+            console.log('New window opened');
+          } catch(error) {
+            console.error('New window failed:', error);
+            // Final fallback - show URL to user
+            alert('Please navigate to: ' + discountsUrl);
+          }
+        }
+        
+        // Set up immediate click handler
+        openBtn.onclick = function(){
+          console.log('Button clicked!');
+          navigateToDiscounts();
         };
         
         function wireAppBridge(){
@@ -87,7 +134,7 @@ export default function handler(req, res) {
           }
           
           if (!AppBridge) {
-            console.log('App Bridge still not available, using fallback only');
+            console.log('App Bridge not available, using fallback navigation only');
             return false;
           }
           
@@ -106,15 +153,15 @@ export default function handler(req, res) {
             });
             console.log('App created:', app);
             
-            // Enhanced click handler with App Bridge + fallback
+            // Enhanced click handler with App Bridge
             openBtn.onclick = function(){
-              console.log('Enhanced button clicked!');
+              console.log('App Bridge enhanced button clicked!');
               let appBridgeWorked = false;
               
               try {
                 console.log('Attempting App Bridge navigation...');
                 
-                // Try App Bridge navigation
+                // Try different App Bridge navigation methods
                 if (app && app.dispatch) {
                   app.dispatch({
                     type: 'APP::NAVIGATE',
@@ -133,22 +180,20 @@ export default function handler(req, res) {
                 console.error('App Bridge navigation failed:', error);
               }
               
-              // Always use fallback after a short delay, just in case
-              setTimeout(function(){
-                if (!appBridgeWorked) {
-                  console.log('Using immediate fallback navigation');
-                }
-                try { 
-                  console.log('Fallback navigation to:', discountsUrl);
-                  window.top.location.assign(discountsUrl); 
-                } catch(error) { 
-                  console.error('Fallback navigation error:', error);
-                  window.location.assign(discountsUrl); 
-                }
-              }, appBridgeWorked ? 500 : 100);
+              // If App Bridge didn't work, fall back to our enhanced navigation
+              if (!appBridgeWorked) {
+                console.log('App Bridge failed, using fallback navigation');
+                navigateToDiscounts();
+              } else {
+                // Even if App Bridge worked, add a safety fallback after a delay
+                setTimeout(function() {
+                  console.log('Safety fallback after App Bridge attempt');
+                  navigateToDiscounts();
+                }, 1000);
+              }
             };
             
-            console.log('Enhanced button click handler attached with App Bridge');
+            console.log('App Bridge enhanced button click handler attached');
             return true;
           } catch(error) {
             console.error('Error setting up App Bridge:', error);
@@ -156,44 +201,26 @@ export default function handler(req, res) {
           }
         }
         
-        // Try to wire App Bridge with multiple strategies
-        console.log('Initial App Bridge setup attempt...');
+        // Try to set up App Bridge with reduced polling (since fallback works now)
+        console.log('Attempting App Bridge setup...');
         if (!wireAppBridge()) {
-          console.log('Setting up App Bridge load listeners...');
-          
-          // Strategy 1: Wait for script onload
-          const scriptTag = document.querySelector('script[src*="app-bridge"]');
-          if (scriptTag) {
-            console.log('Found App Bridge script, adding load listener');
-            scriptTag.onload = function() {
-              console.log('App Bridge script loaded');
-              setTimeout(wireAppBridge, 100);
-            };
-          }
-          
-          // Strategy 2: Poll for App Bridge availability
+          // Try a few times then give up - fallback navigation works
           let attempts = 0;
-          const maxAttempts = 20;
+          const maxAttempts = 5;
           const pollInterval = setInterval(function() {
             attempts++;
-            console.log('Polling for App Bridge, attempt:', attempts);
+            console.log('App Bridge polling attempt:', attempts);
             
             if (wireAppBridge() || attempts >= maxAttempts) {
               clearInterval(pollInterval);
               if (attempts >= maxAttempts) {
-                console.log('Max polling attempts reached, using fallback only');
+                console.log('App Bridge unavailable - using fallback navigation only');
               }
             }
-          }, 200);
-          
-          // Strategy 3: Window load event
-          window.addEventListener('load', function() {
-            console.log('Window loaded, final App Bridge attempt');
-            setTimeout(wireAppBridge, 100);
-          });
+          }, 300);
         }
         
-        console.log('Initial setup complete - button has fallback handler');
+        console.log('Setup complete - button ready with enhanced navigation');
       })();
     </script>
   </body>
