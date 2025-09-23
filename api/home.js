@@ -10,18 +10,9 @@ export default function handler(req, res) {
     <meta charset="utf-8" />
     <base target="_top">
     <title>Gift Discount App</title>
-
-    <!-- Shopify App Bridge (CDN) -->
-    <script
-      src="https://cdn.shopify.com/shopifycloud/app-bridge.js"
-      data-api-key="${process.env.SHOPIFY_API_KEY}">
-    </script>
+    <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key="${process.env.SHOPIFY_API_KEY}"></script>
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge-utils.js"></script>
-
-    <style>
-      body{font:14px system-ui;padding:24px}
-      button{padding:6px 10px;cursor:pointer}
-    </style>
+    <style>body{font:14px system-ui;padding:24px}button{padding:6px 10px;cursor:pointer}</style>
   </head>
   <body>
     <h1>Gift Discount App</h1>
@@ -41,51 +32,48 @@ export default function handler(req, res) {
           return;
         }
 
-        // Build a guaranteed admin URL from the base64-encoded host param
-        // hostParam decodes to "admin.shopify.com/store/<store>"
-        let adminBase = '';
-        try {
-          const decoded = (window.atob || atob)(hostParam);
-          adminBase = 'https://' + decoded.replace(/\\/+$/, '');
-        } catch (_) {
-          // Fallback to generic admin root if decoding ever failed
-          adminBase = '/admin';
+        // Decode base64-URL host safely → "admin.shopify.com/store/<store>"
+        function b64urlDecode(input){
+          try{
+            let s = input.replace(/-/g, '+').replace(/_/g, '/');
+            while (s.length % 4) s += '=';
+            return (window.atob || atob)(s);
+          }catch(e){ return ''; }
         }
-        const discountsUrl = adminBase + '/discounts';
+        const decodedHost = b64urlDecode(hostParam);              // e.g. "admin.shopify.com/store/blueskytestenv"
+        const adminBase   = decodedHost ? ('https://' + decodedHost.replace(/\\/+$/, '')) : '';
+        const discountsUrl = adminBase ? (adminBase + '/discounts') : '/admin/discounts';
 
-        function wireHandlers() {
+        function wire(){
           const AB = window.appBridge || window['app-bridge'];
           if (!AB) return false;
 
           const { actions, createApp } = AB;
-          const utils = window['app-bridge-utils'];
           const app = createApp({ apiKey: "${process.env.SHOPIFY_API_KEY}", host: hostParam });
-
-          // Optional: request a session token (helps embedded checks)
-          try { utils.getSessionToken(app).catch(() => {}); } catch (e) {}
-
           const Redirect = actions.Redirect;
           const redirect = Redirect.create(app);
 
           openBtn.onclick = function(){
-            // Try App Bridge first…
-            try { redirect.dispatch(Redirect.Action.ADMIN_PATH, '/discounts'); } catch (_) {}
+            let fired = false;
+            try {
+              redirect.dispatch(Redirect.Action.ADMIN_PATH, '/discounts'); // official way
+              fired = true;
+            } catch(_) {}
 
-            // …then hard-fallback after a brief delay if nothing happened.
+            // If nothing happens, force top-level navigation using decoded host
             setTimeout(function(){
               try { window.top.location.assign(discountsUrl); }
-              catch (_) { window.location.assign(discountsUrl); }
-            }, 400);
+              catch(_) { window.location.assign(discountsUrl); }
+            }, fired ? 400 : 50);
           };
 
           return true;
         }
 
-        // If App Bridge is already present, wire now; otherwise wait for the script to load
-        if (!wireHandlers()) {
+        if (!wire()){
           const tag = document.querySelector('script[src*="app-bridge.js"]');
-          if (tag) tag.addEventListener('load', wireHandlers, { once: true });
-          else window.addEventListener('load', wireHandlers, { once: true });
+          if (tag) tag.addEventListener('load', wire, { once: true });
+          else window.addEventListener('load', wire, { once: true });
         }
       })();
     </script>
